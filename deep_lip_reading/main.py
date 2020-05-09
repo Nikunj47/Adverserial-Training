@@ -6,6 +6,7 @@ import os
 import editdistance
 import numpy as np
 import tensorflow as tf
+import cv2
 from tensorflow.keras.utils import Progbar
 
 from config import load_args
@@ -49,11 +50,11 @@ def evaluate_model():
 
             out_str = "lm={}, beam={}, bs={:d}, test_aug:{:d}, horflip {}:" \
                       " CER {:.4f}, WER {:4f}\n\n".format(config.lm_path,
-                                                        config.beam_size,
-                                                        config.batch_size,
-                                                        config.test_aug_times,
-                                                        config.horizontal_flip,
-                                                        val_cer, val_wer)
+                                                          config.beam_size,
+                                                          config.batch_size,
+                                                          config.test_aug_times,
+                                                          config.horizontal_flip,
+                                                          val_cer, val_wer)
             print(out_str)
             with open('output.txt', 'a') as fw:
                 fw.write(out_str)
@@ -67,7 +68,7 @@ def validation_loop(sess, g, n_batches, chars=None, val_gen=None, tb_writer=None
     Wer = []
 
     progbar = Progbar(target=n_batches, verbose=1, stateful_metrics=['t'])
-    print('Strating validation Loop')
+    print('Starting validation Loop')
 
     for i in range(n_batches):
 
@@ -103,8 +104,6 @@ def validation_loop(sess, g, n_batches, chars=None, val_gen=None, tb_writer=None
 
         # -- Autoregression loop is built into the beam search graph
         else:
-            x = g.adversarial
-            if len(x) == 1: x = x[0]
 
             feed_dict = {g.x: x, g.y: y}
             enc = sess.run(g.enc, feed_dict)
@@ -116,8 +115,21 @@ def validation_loop(sess, g, n_batches, chars=None, val_gen=None, tb_writer=None
             preds = _preds
 
         # use last loss
+        adversarial = sess.run(g.adversarial, feed_dict)
         gt_sents = [''.join([chars[cid] for cid in prr]).strip() for prr in y]
         gt_words = [sent.split('-') for sent in gt_sents]
+        vid = adversarial[0]
+        output_path = 'data/outputs/' + str(i) + '.avi'
+        print('Now writing to:', output_path)
+        #print(np.count_nonzero(vid[0]))
+        out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'MJPG'), 10, (config.img_width, config.img_height))
+        for j in range(vid.shape[0]):
+            img = vid[j]
+            img = img * 255.0
+            #print(np.count_nonzero(img))
+            out.write(img.astype(np.uint8))
+
+        out.release()
 
         def decode_preds_to_chars(decoding):
             return ''.join([chars[cid] for cid in decoding]).strip()
@@ -137,7 +149,7 @@ def validation_loop(sess, g, n_batches, chars=None, val_gen=None, tb_writer=None
         if config.print_predictions:
             print()
             for gts, prs, wr in zip(gt_sents, pred_sentences, edists):
-                print('(wer={:.1f}) {} --> {}'.format(wr * 100, gts, prs))
+                print('(wer={:.1f}) {} --> {}'.format(wr * 100, gts, prs), '\n')
 
         progbar.update(i + 1, [('cer', cer), ('wer', wer)])
         Wer.append(wer)
